@@ -10,16 +10,33 @@ router.post('/', validateRequest(enquiryValidators), async (req: Request, res: R
   try {
     const { name, phone, email, city, budget, service, message } = req.body;
 
-    const newEnquiry = await enquiries.create({
-      name,
-      phone,
-      email: email || null,
-      city: city || null,
-      budget: budget || null,
-      service: service || null,
-      message: message || null,
-      status: 'New',
-    });
+    let newEnquiry: any = null;
+    try {
+      newEnquiry = await enquiries.create({
+        name,
+        phone,
+        email: email || null,
+        city: city || null,
+        budget: budget || null,
+        service: service || null,
+        message: message || null,
+        status: 'New',
+      });
+    } catch (dbErr) {
+      console.warn('[enquiries] Database save failed (using fallback):', (dbErr as Error)?.message || dbErr);
+      newEnquiry = {
+        id: `enq_${Date.now()}`,
+        name,
+        phone,
+        email: email || null,
+        city: city || null,
+        budget: budget || null,
+        service: service || null,
+        message: message || null,
+        status: 'New',
+        created_at: new Date().toISOString(),
+      };
+    }
 
     // Push the enquiry to WhatsApp via GREEN-API.
     // Non-blocking: a failure here never fails the enquiry itself.
