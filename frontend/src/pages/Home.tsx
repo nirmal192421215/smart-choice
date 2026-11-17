@@ -54,17 +54,14 @@ export const Home = () => {
   const [newsletterEmail, setNewsletterEmail] = useState('');
   const [quotePopupOpen, setQuotePopupOpen] = useState(false);
 
-  // Auto-open the quote popup once per session, after the visitor has
-  // had a moment to see the page.
+  // Auto-open the quote popup every 10 seconds on the home screen
   useEffect(() => {
-    const KEY = 'sc_quote_popup_seen';
-    if (sessionStorage.getItem(KEY)) return;
+    if (quotePopupOpen) return;
     const timer = setTimeout(() => {
       setQuotePopupOpen(true);
-      sessionStorage.setItem(KEY, '1');
-    }, 8000);
+    }, 10000);
     return () => clearTimeout(timer);
-  }, []);
+  }, [quotePopupOpen]);
 
   // Handle simulated tap on phone preview
   const handleAppSelect = (appName: string) => {
