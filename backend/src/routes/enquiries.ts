@@ -1,5 +1,6 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import { enquiries } from '../config/database';
+import { isSupabaseConfigured } from '../config/supabase';
 import { validateRequest, enquiryValidators } from '../middleware/validators';
 import { sendWhatsAppMessage } from '../services/greenapi';
 
@@ -11,19 +12,24 @@ router.post('/', validateRequest(enquiryValidators), async (req: Request, res: R
     const { name, phone, email, city, budget, service, message } = req.body;
 
     let newEnquiry: any = null;
-    try {
-      newEnquiry = await enquiries.create({
-        name,
-        phone,
-        email: email || null,
-        city: city || null,
-        budget: budget || null,
-        service: service || null,
-        message: message || null,
-        status: 'New',
-      });
-    } catch (dbErr) {
-      console.warn('[enquiries] Database save failed (using fallback):', (dbErr as Error)?.message || dbErr);
+    if (isSupabaseConfigured) {
+      try {
+        newEnquiry = await enquiries.create({
+          name,
+          phone,
+          email: email || null,
+          city: city || null,
+          budget: budget || null,
+          service: service || null,
+          message: message || null,
+          status: 'New',
+        });
+      } catch (dbErr) {
+        console.warn('[enquiries] Database save failed (using fallback):', (dbErr as Error)?.message || dbErr);
+      }
+    }
+
+    if (!newEnquiry) {
       newEnquiry = {
         id: `enq_${Date.now()}`,
         name,
@@ -38,23 +44,20 @@ router.post('/', validateRequest(enquiryValidators), async (req: Request, res: R
       };
     }
 
-    // Push the enquiry to WhatsApp via GREEN-API.
-    // Non-blocking: a failure here never fails the enquiry itself.
-    try {
-      const lines: string[] = [];
-      lines.push('🧑 *New Website Enquiry — Smart Choice*');
-      lines.push(`Name: *${name}*`);
-      lines.push(`Phone: *${phone}*`);
-      if (email) lines.push(`Email: ${email}`);
-      if (city) lines.push(`Location: ${city}`);
-      if (service) lines.push(`Service: ${service}`);
-      if (budget) lines.push(`Budget: ${budget}`);
-      if (message) lines.push('', `📝 Message:`, message);
+    // Push the enquiry to WhatsApp via GREEN-API in background (zero wait time for user)
+    const lines: string[] = [];
+    lines.push('🧑 *New Website Enquiry — Smart Choice*');
+    lines.push(`Name: *${name}*`);
+    lines.push(`Phone: *${phone}*`);
+    if (email) lines.push(`Email: ${email}`);
+    if (city) lines.push(`Location: ${city}`);
+    if (service) lines.push(`Service: ${service}`);
+    if (budget) lines.push(`Budget: ${budget}`);
+    if (message) lines.push('', `📝 Message:`, message);
 
-      await sendWhatsAppMessage(lines.join('\n'));
-    } catch (notifyErr) {
+    sendWhatsAppMessage(lines.join('\n')).catch((notifyErr) => {
       console.error('[enquiries] WhatsApp notification failed:', (notifyErr as Error)?.message || notifyErr);
-    }
+    });
 
     res.status(201).json({
       success: true,

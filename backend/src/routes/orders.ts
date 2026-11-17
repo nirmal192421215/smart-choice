@@ -1,5 +1,6 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import { orders, orderItems, products } from '../config/database';
+import { isSupabaseConfigured } from '../config/supabase';
 import { authenticateUser, AuthRequest } from '../middleware/auth';
 import { sendWhatsAppMessage, buildOrderNotification } from '../services/greenapi';
 
@@ -62,30 +63,35 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
     const orderNumber = `SC-${Date.now().toString().slice(-6)}-${Math.floor(100 + Math.random() * 900)}`;
 
     let newOrder: any = null;
-    try {
-      newOrder = await orders.create({
-        user_id: userId || null,
-        items,
-        shipping_address: shippingAddress,
-        total_amount: totalAmount,
-        payment_status: paymentMethod === 'cod' ? 'authorized' : 'pending',
-        status: 'Confirmed',
-      });
+    if (isSupabaseConfigured) {
+      try {
+        newOrder = await orders.create({
+          user_id: userId || null,
+          items,
+          shipping_address: shippingAddress,
+          total_amount: totalAmount,
+          payment_status: paymentMethod === 'cod' ? 'authorized' : 'pending',
+          status: 'Confirmed',
+        });
 
-      if (items && items.length > 0) {
-        const formattedItems = items.map((item: any) => ({
-          order_id: newOrder.id,
-          product_id: item.productId,
-          quantity: item.quantity,
-          price: item.price,
-          selected_color: item.color,
-          selected_variant: item.variantId || null,
-          custom_destination: item.customDestinationUrl || null,
-        }));
-        await orderItems.createBulk(formattedItems);
+        if (items && items.length > 0) {
+          const formattedItems = items.map((item: any) => ({
+            order_id: newOrder.id,
+            product_id: item.productId,
+            quantity: item.quantity,
+            price: item.price,
+            selected_color: item.color,
+            selected_variant: item.variantId || null,
+            custom_destination: item.customDestinationUrl || null,
+          }));
+          await orderItems.createBulk(formattedItems);
+        }
+      } catch (dbErr) {
+        console.warn('[orders] Database save failed (using fallback):', (dbErr as Error)?.message || dbErr);
       }
-    } catch (dbErr) {
-      console.warn('[orders] Database save failed (using fallback):', (dbErr as Error)?.message || dbErr);
+    }
+
+    if (!newOrder) {
       newOrder = {
         id: `ord_${Date.now()}`,
         order_number: orderNumber,
@@ -129,9 +135,11 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
         items: enrichedItems,
       });
 
-      await sendWhatsAppMessage(message);
+      sendWhatsAppMessage(message).catch((notifyErr) => {
+        console.error('[orders] WhatsApp notification failed:', (notifyErr as Error)?.message || notifyErr);
+      });
     } catch (notifyErr) {
-      console.error('[orders] WhatsApp notification failed:', (notifyErr as Error)?.message || notifyErr);
+      console.error('[orders] WhatsApp notification preparation failed:', (notifyErr as Error)?.message || notifyErr);
     }
 
     res.status(201).json({
