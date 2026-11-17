@@ -1,7 +1,6 @@
 {
   "name": "smart-choice-backend",
   "version": "1.0.0",
-  "type": "module",
   "description": "Smart Choice E-commerce Backend API",
   "main": "dist/index.js",
   "scripts": {
